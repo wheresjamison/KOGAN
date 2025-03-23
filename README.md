@@ -74,3 +74,6 @@ This project was built with privacy as a core value. No user data, personal cred
 ## 👨‍💻 Creator
 
 This project is maintained privately for personal use and technical demonstration purposes. Designed for learning, iteration, and showcasing autonomous assistant architecture without reliance on third-party ecosystems.
+=======
+# KOGAN
+Voice-driven offline AI assistant running on Linux, integrating Vosk, Coqui TTS, and LLMs (Ollama/Gemma) with modular features, version control, and secure remote access. Designed for real-world, customizable smart assistant use — no cloud dependency required.
