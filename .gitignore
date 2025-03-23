@@ -1,0 +1,18 @@
+# Ignore virtual environment
+venv/
+
+# Private data
+token_expiry.txt
+data/long_term_memory.json
+
+# TTS / Vosk model downloads (can be re-fetched)
+voice/
+
+# System / temp files
+*.pyc
+__pycache__/
+.DS_Store
+
+# VSCode or editor settings
+.vscode/
+
