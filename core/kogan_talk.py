@@ -4,9 +4,11 @@ import sys
 import json
 import os
 import requests
+import tempfile
 from datetime import datetime, timedelta
-from vosk import Model, KaldiRecognizer
 from TTS.api import TTS
+from faster_whisper import WhisperModel
+from scipy.io.wavfile import write as wav_write
 
 # Set up paths relative to this script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,18 +22,12 @@ if not os.path.exists(long_term_memory_path):
     with open(long_term_memory_path, "w") as f:
         json.dump([], f)
 
-# Set up Vosk (STT)
-vosk_model_path = os.path.expanduser("~/KOGAN/voice/vosk-model-small-en-us-0.15")
-if not os.path.exists(vosk_model_path):
-    print("Downloading Vosk model...")
-    os.makedirs(os.path.dirname(vosk_model_path), exist_ok=True)
-    os.system(f"wget -q --show-progress https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -O ~/KOGAN/voice/vosk.zip")
-    os.system("unzip -o ~/KOGAN/voice/vosk.zip -d ~/KOGAN/voice/")
-    os.system("rm ~/KOGAN/voice/vosk.zip")
+# Set up Whisper (STT)
+whisper_model = WhisperModel("base", compute_type="int8")
 
-q = queue.Queue()
-model = Model(vosk_model_path)
-rec = KaldiRecognizer(model, 16000)
+def transcribe_audio(audio_path):
+    segments, _ = whisper_model.transcribe(audio_path)
+    return " ".join([seg.text for seg in segments])
 
 # Set up TTS (Text to Speech)
 tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC", progress_bar=False, gpu=False)
@@ -97,28 +93,27 @@ def recall_relevant_memory():
     except Exception as e:
         return ""
 
-def callback(indata, frames, time, status):
-    if status:
-        print(status, file=sys.stderr)
-    q.put(bytes(indata))
-
 def listen_and_respond():
     print("🎤 Say something to KOGAN...")
-    with sd.RawInputStream(samplerate=16000, blocksize=8000, dtype='int16',
-                           channels=1, callback=callback):
-        while True:
-            data = q.get()
-            if rec.AcceptWaveform(data):
-                result = json.loads(rec.Result())
-                text = result.get("text", "")
-                if text:
-                    print(f"🧠 You said: {text}")
-                    conversation_history.append({"role": "user", "content": text})
-                    reply = generate_response(text)
-                    conversation_history.append({"role": "assistant", "content": reply})
-                    append_to_long_term_memory(text, reply)
-                    speak(reply)
-                    break
+    duration = 5  # seconds
+    samplerate = 16000
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        print("⏺️ Recording...")
+        recording = sd.rec(int(duration * samplerate), samplerate=samplerate, channels=1, dtype='int16')
+        sd.wait()
+        print("📼 Saving audio...")
+        wav_write(tmp.name, samplerate, recording)
+
+        print("🧠 Transcribing...")
+        text = transcribe_audio(tmp.name)
+        print(f"🧾 Whisper heard: {text}")
+
+        if text:
+            conversation_history.append({"role": "user", "content": text})
+            reply = generate_response(text)
+            conversation_history.append({"role": "assistant", "content": reply})
+            append_to_long_term_memory(text, reply)
+            speak(reply)
 
 def generate_response(prompt):
     try:
@@ -142,7 +137,7 @@ def generate_response(prompt):
         print("🧾 Final prompt sent to model:\n", full_prompt)
 
         res = requests.post("http://localhost:11434/api/generate", json={
-            "model": "gemma:2b",
+            "model": "openchat",
             "prompt": full_prompt,
             "stream": False
         })
